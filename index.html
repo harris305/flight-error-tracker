@@ -84,7 +84,11 @@ const chips = (id, items) => $(id).innerHTML = items.map(([v, t, on]) => `<label
 const picked = id => [...document.querySelectorAll(`${id} input:checked`)].map(i => i.value);
 
 async function init() {
-  A = await (await fetch("/api/airports")).json();
+  try {
+    const r = await fetch("/api/airports");
+    if (!r.ok) throw new Error(`/api/airports returned ${r.status}. Open that address directly in your browser to see the error.`);
+    A = await r.json();
+  } catch (e) { $("#status").textContent = "Could not load the airport lists: " + e.message; return; }
   chips("#origins", A.origins.map(o => [o.code, `${o.code} ${o.city}`, DEF_O.includes(o.code)]));
   chips("#regions", Object.entries(A.regions).map(([k, v]) => [k, v, k !== "LA"]));
   $("#dep").value = month(2); $("#ret").value = month(3);
