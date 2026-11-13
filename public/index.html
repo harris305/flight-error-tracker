@@ -90,7 +90,7 @@ async function init() {
     A = await r.json();
   } catch (e) { $("#status").textContent = "Could not load the airport lists: " + e.message; return; }
   chips("#origins", A.origins.map(o => [o.code, `${o.code} ${o.city}`, DEF_O.includes(o.code)]));
-  chips("#regions", Object.entries(A.regions).map(([k, v]) => [k, v, k !== "LA"]));
+  chips("#regions", Object.entries(A.regions).map(([k, v]) => [k, v, true]));
   $("#dep").value = month(2); $("#ret").value = month(3);
   document.addEventListener("change", count); count();
 }
