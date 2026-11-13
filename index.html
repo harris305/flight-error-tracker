@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error fare finder</title>
+<style>
+:root{--bg:#e8edf1;--panel:#fff;--ink:#12202b;--mute:#5d6b77;--line:#cfd8df;--sign:#ffc400;--deep:#0f3a55;--ok:#0b7a4b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Frutiger","Segoe UI","Helvetica Neue",Arial,sans-serif}
+header{background:var(--deep);color:#fff;padding:28px 20px 24px}
+header div,main{max-width:1040px;margin:0 auto}
+h1{margin:0 0 4px;font-size:30px;letter-spacing:-.5px}
+header p{margin:0;color:#b9d0df;max-width:60ch}
+main{padding:20px}
+section.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;margin-bottom:16px}
+h2{font-size:15px;margin:0 0 8px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips label{cursor:pointer}
+.chips input{position:absolute;opacity:0}
+.chips span{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:4px;background:#f4f7f9}
+.chips input:checked+span{background:var(--deep);border-color:var(--deep);color:#fff}
+.chips input:focus-visible+span{outline:3px solid var(--sign)}
+input[type=month],select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fff}
+.mini{font-size:13px;color:var(--mute);margin-top:6px}
+.mini button{font:inherit;background:none;border:0;color:var(--deep);text-decoration:underline;cursor:pointer;padding:0 6px 0 0}
+button.go{font:inherit;font-weight:700;background:var(--sign);color:#12202b;border:0;border-radius:4px;padding:11px 22px;cursor:pointer}
+button.go:disabled{opacity:.5;cursor:wait}
+button.go:focus-visible{outline:3px solid var(--deep)}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--deep);transition:width .2s}
+#status{color:var(--mute);margin-top:8px;min-height:22px}
+.fare{display:grid;grid-template-columns:92px 1fr auto;gap:14px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.fare:first-child{border-top:0}
+.off{background:var(--sign);border-radius:4px;text-align:center;padding:8px 0;font-weight:800;font-size:24px;line-height:1}
+.off small{display:block;font-size:12px;font-weight:600;margin-top:3px}
+.route{font-size:18px;font-weight:700}
+.route em{font-style:normal;color:var(--mute);font-weight:400;font-size:14px}
+.tag{display:inline-block;background:#e3f3ec;color:var(--ok);font-weight:600;border-radius:3px;padding:1px 8px;font-size:13px;margin-right:6px}
+.meta{color:var(--mute);font-size:13px}
+.price{text-align:right;font-size:24px;font-weight:800}
+.price small{display:block;font-size:12px;font-weight:400;color:var(--mute)}
+.links{grid-column:2/4;font-size:13px}
+.links a{color:var(--deep);margin-right:14px}
+.note{font-size:13px;color:var(--mute)}
+@media(max-width:560px){.fare{grid-template-columns:76px 1fr}.price{grid-column:2;text-align:left}.links{grid-column:1/3}}
+</style>
+</head>
+<body>
+<header><div>
+<h1>Error fare finder</h1>
+<p>Scans US departure airports against destinations worldwide and flags fares priced far below what that distance normally costs.</p>
+</div></header>
+<main>
+<section class="panel">
+  <div class="row">
+    <div><h2>Fly from</h2><div class="chips" id="origins"></div>
+      <div class="mini"><button data-all="origins">All</button><button data-none="origins">None</button></div></div>
+    <div><h2>Fly to</h2><div class="chips" id="regions"></div>
+      <div class="mini"><button data-all="regions">All</button><button data-none="regions">None</button></div></div>
+    <div><h2>When</h2>
+      <p style="margin:0 0 8px"><select id="trip"><option value="rt">Round trip</option><option value="ow">One way</option></select></p>
+      <p style="margin:0 0 8px">Leave <input type="month" id="dep"></p>
+      <p style="margin:0" id="retwrap">Return <input type="month" id="ret"></p></div>
+    <div><h2>Show fares at least</h2>
+      <p style="margin:0"><select id="min"><option value="-1000">Show every fare found</option><option value="0">Any discount</option><option value="30" selected>30% below normal</option><option value="45">45% below normal</option><option value="60">60% below normal</option><option value="75">75% below normal</option></select></p>
+      <p class="mini" id="count"></p></div>
+  </div>
+  <p style="margin:16px 0 0"><button class="go" id="scan">Scan for error fares</button></p>
+  <div class="bar"><i id="prog"></i></div>
+  <div id="status"></div>
+</section>
+<section class="panel" id="results" hidden></section>
+<p class="note">Fares come from cached search data and can be hours old. The error type is a best guess from price patterns, not a confirmation. Check the fare on the airline's own site before relying on it, and know that airlines may cancel error fares, so hold off on non-refundable hotels until the ticket is confirmed.</p>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let A, found = [];
+const DEF_O = ["JFK", "LAX", "SFO", "ORD", "MIA"];
+const month = n => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 7); };
+const chips = (id, items) => $(id).innerHTML = items.map(([v, t, on]) => `<label><input type="checkbox" value="${esc(v)}" ${on ? "checked" : ""}><span>${esc(t)}</span></label>`).join("");
+const picked = id => [...document.querySelectorAll(`${id} input:checked`)].map(i => i.value);
+
+async function init() {
+  A = await (await fetch("/api/airports")).json();
+  chips("#origins", A.origins.map(o => [o.code, `${o.code} ${o.city}`, DEF_O.includes(o.code)]));
+  chips("#regions", Object.entries(A.regions).map(([k, v]) => [k, v, k !== "LA"]));
+  $("#dep").value = month(2); $("#ret").value = month(3);
+  document.addEventListener("change", count); count();
+}
+function pairs() {
+  const rs = picked("#regions"), ds = A.dests.filter(d => rs.includes(d.region));
+  return picked("#origins").flatMap(o => ds.map(d => [o, d.code]));
+}
+function count() {
+  $("#retwrap").hidden = $("#trip").value === "ow";
+  const n = pairs().length;
+  $("#count").textContent = `${n} airport pairs to check` + (n > 500 ? " (over 500 will take a while)" : "");
+}
+document.addEventListener("click", e => {
+  const b = e.target.dataset; if (!b.all && !b.none) return;
+  document.querySelectorAll(`#${b.all || b.none} input`).forEach(i => i.checked = !!b.all); count();
+});
+
+async function scan() {
+  const list = pairs(), ow = $("#trip").value === "ow", dep = $("#dep").value, ret = ow ? "" : $("#ret").value;
+  if (!list.length || !dep) return $("#status").textContent = "Pick at least one origin, one destination region and a departure month.";
+  $("#scan").disabled = true; found = []; let done = 0, errs = 0, lastErr = "", withData = 0;
+  const q = list.slice(), worker = async () => {
+    while (q.length) {
+      const [o, d] = q.shift();
+      try {
+        const r = await fetch(`/api/search?o=${o}&d=${d}&dep=${dep}&ret=${ret}&oneway=${ow ? 1 : 0}`), j = await r.json();
+        if (!r.ok) throw new Error(j.error); if (j.offers.length) withData++; found.push(...j.offers);
+      } catch (e) { errs++; lastErr = e.message; if (/not set/.test(lastErr)) q.length = 0; }
+      $("#prog").style.width = (++done / list.length * 100) + "%";
+      if (done % 5 === 0 || !q.length) { $("#status").textContent = `Checked ${done} of ${list.length}`; render(); }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  $("#status").textContent = `Done. ${withData} of ${list.length} routes returned fares` + (errs ? `, ${errs} failed (${lastErr})` : "") + ".";
+  $("#scan").disabled = false; render();
+}
+
+function render() {
+  const min = +$("#min").value, ow = $("#trip").value === "ow";
+  const seen = new Set(), rows = found.filter(f => f.pctOff >= min)
+    .sort((a, b) => b.pctOff - a.pctOff).filter(f => { const k = f.origin + f.dest + f.price; return seen.has(k) ? 0 : seen.add(k); }).slice(0, min < 0 ? 150 : 60);
+  const box = $("#results"); box.hidden = false;
+  if (!rows.length) { box.innerHTML = `<p style="margin:0">${found.length ? `Fares were found but none are ${min}% below normal. Choose "Show every fare found" to see them all.` : "No fares came back for these routes. Try another month, more origins or more regions."}</p>`; return; }
+  box.innerHTML = rows.map(f => {
+    const d = (f.depart || "").replaceAll("-", ""), r = (f.back || "").replaceAll("-", "");
+    const g = `https://www.google.com/travel/flights?q=${encodeURIComponent(`Flights from ${f.origin} to ${f.dest} on ${f.depart}` + (f.back ? ` through ${f.back}` : ""))}`;
+    const k = `https://www.kayak.com/flights/${f.origin}-${f.dest}/${f.depart}${f.back ? "/" + f.back : ""}`;
+    return `<div class="fare"><div class="off">${f.pctOff}%<small>below normal</small></div>
+      <div><div class="route">${esc(f.origin)} to ${esc(f.dest)} <em>${esc(f.city)}</em></div>
+      <div>${f.type ? `<span class="tag">${esc(f.type)}</span>` : ""}<span class="meta">${esc(f.why || "Deep discount, no clear error pattern.")}</span></div>
+      <div class="meta">${esc(f.airline || "Airline unknown")}, ${f.stops == null ? "" : f.stops === 0 ? "nonstop" : f.stops + " stop" + (f.stops > 1 ? "s" : "")} &middot; ${esc(f.depart || "")}${f.back ? " to " + esc(f.back) : ""}</div></div>
+      <div class="price">$${Math.round(f.price)}<small>normal about $${f.base}</small></div>
+      <div class="links">Verify: ${f.link ? `<a href="${esc(f.link)}" target="_blank" rel="noopener">Aviasales</a>` : ""}<a href="${esc(g)}" target="_blank" rel="noopener">Google Flights</a><a href="${esc(k)}" target="_blank" rel="noopener">Kayak</a></div></div>`;
+  }).join("");
+}
+$("#scan").onclick = scan; $("#min").onchange = render; init();
+</script>
+</body>
+</html>
